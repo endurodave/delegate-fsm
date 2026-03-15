@@ -5,7 +5,7 @@
 
 # State Machine Design in C++
 
-A compact, table-driven C++ finite state machine (FSM) with "infused" DelegateMQ features for asynchronous active-object support. Runs on embedded and PC targets. This design uses a memory-efficient table-driven core using macros for state registration while adding modern pub/sub signals (`OnTransition`, `OnEntry`, `OnExit`) and thread-safe dispatch. Promote any SM to a thread-safe active object with a single `SetThread()` call.
+A compact, table-driven C++ finite state machine (FSM) with asynchronous active-object and signal-slot event notification. Runs on embedded and PC targets. 
 
 # Table of Contents
 
@@ -35,6 +35,11 @@ A compact, table-driven C++ finite state machine (FSM) with "infused" DelegateMQ
 - [Multithread safety](#multithread-safety)
 - [Fixed-block allocator](#fixed-block-allocator)
 - [Comparison with other libraries](#comparison-with-other-libraries)
+    - [Boost.MSM](#boostmsm)
+    - [Boost.Statechart](#booststatechart)
+    - [SML (kgrzybek)](#sml-kgrzybek)
+    - [TinyFSM](#tinyfsm)
+    - [QP/C++](#qpc)
     - [Summary](#summary)
 
 
@@ -159,7 +164,7 @@ public:
 using NoEventData = EventData;
 ```
 
-The state machine takes ownership of the `EventData` pointer and deletes it after the transition is processed.
+The state machine takes ownership of the `EventData` pointer and deletes it after the transition is processed. (Note: if the fixed-block allocator is enabled, `operator new` and `delete` will use the pool allocator). All event data passed to `ExternalEvent()` must be created on the heap using `operator new`.
 
 ## State transitions
 
@@ -317,6 +322,46 @@ This project includes an optional fixed-block pool allocator, `xallocator`. When
 
 # Comparison with other libraries
 
+The table below compares this implementation against several widely used C++ state machine libraries across the features most relevant to embedded and multithreaded applications.
+
+| Feature | This implementation | Boost.MSM | Boost.Statechart | SML (kgrzybek) | TinyFSM | QP/C++ |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| Compact binary footprint | ✓ | — | — | ✓ | ✓ | — |
+| No external dependencies | — | — | — | ✓ | ✓ | — |
+| Embedded-friendly | ✓ | — | — | ✓ | ✓ | ✓ |
+| Runtime state registration | ✓ | — | — | — | — | — |
+| Typed event data per state | ✓ | ✓ | ✓ | ✓ | — | ✓ |
+| Guard conditions | ✓ | ✓ | ✓ | ✓ | — | ✓ |
+| Entry / exit actions | ✓ | ✓ | ✓ | ✓ | — | ✓ |
+| State machine inheritance | ✓ | — | ✓ | — | — | ✓ |
+| Built-in async active-object | ✓ | — | — | — | — | ✓ |
+| Pub/sub signals (OnTransition etc.) | ✓ | — | — | — | — | — |
+| `shared_ptr` event data (async safe) | — | — | — | — | — | — |
+| Validate() at startup | — | — | — | — | — | — |
+| C++17 standard only | ✓ | ✓ | ✓ | ✓ | ✓ | — |
+| Hierarchical SM (HSM) | — | ✓ | ✓ | — | — | ✓ |
+| Compile-time transition checking | partial | ✓ | — | ✓ | ✓ | — |
+
+### Boost.MSM
+
+Boost.MSM is one of the most feature-complete C++ SM libraries available. Transitions are defined entirely at compile time as a table of `Row<>` type entries, and the optimizer can reduce the dispatch overhead to near zero. The tradeoff is significant complexity: template metaprogramming drives the entire design, compile times are long, and error messages are notoriously difficult to interpret. It requires the full Boost installation and is impractical on most embedded targets.
+
+### Boost.Statechart
+
+Boost.Statechart provides a runtime Hierarchical State Machine that closely follows the UML semantics including orthogonal regions and history states. The runtime flexibility comes at a cost: each state is a separate heap-allocated object with virtual dispatch at every transition. The Boost dependency and per-state heap allocation make it unsuitable for constrained embedded systems.
+
+### SML (kgrzybek)
+
+SML is a modern, header-only C++14 library that defines transitions using a concise DSL. It has no heap allocation, no RTTI requirement, and compiles to very tight code. The main limitation is that the entire state machine structure — states, events, guards, and transitions — must be expressed as a compile-time type list. This makes runtime introspection, signals, and dynamic observer attachment impossible without significant extra work. There is also no built-in threading support.
+
+### TinyFSM
+
+TinyFSM is designed specifically for small embedded targets. The entire library is a single header with no dependencies, and dispatch is done through `static` member functions — effectively one state machine instance per type. This makes it very simple and very fast, but it means you cannot have two independent instances of the same state machine class. There is no support for per-transition typed event data, guards, or entry/exit actions in the base design.
+
+### QP/C++
+
+QP/C++ is a full embedded RTOS framework built around hierarchical active objects. It is battle-tested in safety-critical systems and supports a rich UML-compliant HSM with orthogonal regions, deferred events, and publish/subscribe. The active-object model provides the same structural thread safety as `SetThread()` here. The tradeoff is that QP is an entire framework, not a library you drop into an existing project — it brings its own event pool, time-event management, and RTOS abstraction layer. Commercial use may require a license.
+
 ### Summary
 
-This implementation occupies the practical middle ground. It is compact and embedded-friendly, supports guards/entry/exit/inheritance, and adds a built-in async active-object mode and pub/sub signals. It combines the memory efficiency of the original design with modern DelegateMQ features.
+This implementation occupies the practical middle ground. It is compact and embedded-friendly like TinyFSM and SML, supports guards/entry/exit/inheritance like Boost.MSM and QP/C++, and uniquely adds a built-in async active-object mode and pub/sub signals that none of the others provide out of the box. Runtime delegate registration keeps the syntax straightforward — state functions are plain member functions with no special macros or template parameter packs — while the typed delegate adapters still catch signature errors at compile time. For projects that need a capable FSM without adopting a full framework or wrestling with heavy template metaprogramming, this design hits a practical sweet spot.

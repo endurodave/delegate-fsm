@@ -23,11 +23,9 @@ void StateMachine::ExternalEvent(uint8_t newState, const EventData* pData)
     // If we are supposed to ignore this event
     if (newState == EVENT_IGNORED)
     {
-#ifndef EXTERNAL_EVENT_NO_HEAP_DATA
         // Just delete the event data, if any
         if (pData != nullptr)
             delete pData;
-#endif
     }
     else
     {
@@ -39,10 +37,6 @@ void StateMachine::ExternalEvent(uint8_t newState, const EventData* pData)
 
         if (m_smThread)
         {
-#ifdef EXTERNAL_EVENT_NO_HEAP_DATA
-            // Cannot use EXTERNAL_EVENT_NO_HEAP_DATA with async dispatch
-            ASSERT();
-#endif
             // Pass the pointer as a uintptr_t to bypass DelegateMQ's pointer logic.
             // DelegateMQ will clone the uintptr_t (a number), not the EventData object.
             // This prevents slicing and double deletion.
@@ -60,11 +54,6 @@ void StateMachine::ExternalEventImpl(uint8_t newState, uintptr_t pDataPtr)
 {
     const EventData* pData = reinterpret_cast<const EventData*>(pDataPtr);
 
-#ifdef EXTERNAL_EVENT_NO_HEAP_DATA
-    EventData data;
-    if (pData == nullptr)
-        pData = &data;
-#endif
     // Generate the event
     InternalEvent(newState, pData);
 
@@ -109,9 +98,6 @@ void StateMachine::StateEngine(void)
 //----------------------------------------------------------------------------
 void StateMachine::StateEngine(const StateMapRow* const pStateMap)
 {
-#if EXTERNAL_EVENT_NO_HEAP_DATA
-    bool externalEvent = true;
-#endif
     const EventData* pDataTemp = nullptr;	
 
     // While events are being generated keep executing states
@@ -145,21 +131,11 @@ void StateMachine::StateEngine(const StateMapRow* const pStateMap)
         OnTransition(fromState, m_currentState);
 
         // If event data was used, then delete it
-#if EXTERNAL_EVENT_NO_HEAP_DATA
-        if (pDataTemp)
-        {
-            if (!externalEvent)
-                delete pDataTemp;
-            pDataTemp = nullptr;
-        }
-        externalEvent = false;
-#else
         if (pDataTemp)
         {
             delete pDataTemp;
             pDataTemp = nullptr;
         }
-#endif
     }
 }
 
@@ -168,9 +144,6 @@ void StateMachine::StateEngine(const StateMapRow* const pStateMap)
 //----------------------------------------------------------------------------
 void StateMachine::StateEngine(const StateMapRowEx* const pStateMapEx)
 {
-#if EXTERNAL_EVENT_NO_HEAP_DATA
-    bool externalEvent = true;
-#endif
     const EventData* pDataTemp = nullptr;
 
     // While events are being generated keep executing states
@@ -239,20 +212,10 @@ void StateMachine::StateEngine(const StateMapRowEx* const pStateMapEx)
         }
 
         // If event data was used, then delete it
-#if EXTERNAL_EVENT_NO_HEAP_DATA
-        if (pDataTemp)
-        {
-            if (!externalEvent)
-                delete pDataTemp;
-            pDataTemp = nullptr;
-        }
-        externalEvent = false;
-#else
         if (pDataTemp)
         {
             delete pDataTemp;
             pDataTemp = nullptr;
         }
-#endif
     }
 }

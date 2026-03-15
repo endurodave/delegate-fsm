@@ -60,6 +60,52 @@ EXIT_DEFINE(TestSM, ExitA)                { m_exitACount++;  }
 GUARD_DEFINE(TestSM, Guard, NoEventData)  { return m_guardAllow; }
 
 // ---------------------------------------------------------------------------
+// Parent/Child SM — used to test PARENT_TRANSITION logic.
+// ---------------------------------------------------------------------------
+class ParentBase : public StateMachine
+{
+public:
+    int m_baseActionCount = 0;
+    enum States { ST_IDLE, ST_MAX_STATES };
+    ParentBase(uint8_t max) : StateMachine(max) {}
+
+    void CallBaseTransition(uint8_t derivedState)
+    {
+        PARENT_TRANSITION(derivedState)
+        
+        BEGIN_TRANSITION_MAP
+            TRANSITION_MAP_ENTRY(ST_IDLE)
+        END_TRANSITION_MAP(nullptr)
+    }
+
+    STATE_DECLARE(ParentBase, BaseIdle, NoEventData)
+};
+STATE_DEFINE(ParentBase, BaseIdle, NoEventData) { m_baseActionCount++; }
+
+class ChildDerived : public ParentBase
+{
+public:
+    int m_derivedActionCount = 0;
+    enum States { ST_DERIVED = ParentBase::ST_MAX_STATES, ST_MAX_STATES };
+    ChildDerived() : ParentBase(ST_MAX_STATES) {}
+
+    void GoDerived() {
+        BEGIN_TRANSITION_MAP
+            TRANSITION_MAP_ENTRY(ST_DERIVED)  // ST_IDLE
+            TRANSITION_MAP_ENTRY(ST_DERIVED)  // ST_DERIVED
+        END_TRANSITION_MAP(nullptr)
+    }
+
+    STATE_DECLARE(ChildDerived, DerivedState, NoEventData)
+
+    BEGIN_STATE_MAP
+        STATE_MAP_ENTRY(&ParentBase::BaseIdle)
+        STATE_MAP_ENTRY(&DerivedState)
+    END_STATE_MAP
+};
+STATE_DEFINE(ChildDerived, DerivedState, NoEventData) { m_derivedActionCount++; }
+
+// ---------------------------------------------------------------------------
 // StressMotor — two-state SM with no CANNOT_HAPPEN entries.
 // ---------------------------------------------------------------------------
 class StressMotor : public StateMachine
@@ -331,6 +377,51 @@ static void TestConcurrentEventDispatch()
     ASSERT_TRUE(motor.GetCurrentState() < motor.GetMaxStates());
 }
 
+static void TestParentTransition()
+{
+    ChildDerived child;
+    ASSERT_TRUE(child.GetCurrentState() == ChildDerived::ST_IDLE);
+
+    // Use derived class event to get into derived state.
+    child.GoDerived(); 
+    ASSERT_TRUE(child.GetCurrentState() == ChildDerived::ST_DERIVED);
+
+    // Now call base event while in derived state. 
+    // PARENT_TRANSITION macro in ParentBase should trigger because 
+    // GetCurrentState() (ST_DERIVED) >= ParentBase::ST_MAX_STATES.
+    child.CallBaseTransition(ChildDerived::ST_IDLE);
+    ASSERT_TRUE(child.GetCurrentState() == ChildDerived::ST_IDLE);
+    ASSERT_TRUE(child.m_baseActionCount == 1);
+}
+
+static void TestSignalDisconnection()
+{
+    Motor m;
+    int callCount = 0;
+    {
+        auto conn = m.OnTransition.Connect(
+            MakeDelegate(std::function<void(uint8_t, uint8_t)>(
+                [&](uint8_t, uint8_t) { callCount++; })));
+
+        auto d1 = new MotorData(); d1->speed = 100;
+        m.SetSpeed(d1);
+        ASSERT_TRUE(callCount == 1);
+    } // ScopedConnection goes out of scope here
+
+    auto d2 = new MotorData(); d2->speed = 200;
+    m.SetSpeed(d2);
+    ASSERT_TRUE(callCount == 1); // should not have incremented
+}
+
+static void TestNoEventDataCase()
+{
+    Motor m;
+    // Halt() uses END_TRANSITION_MAP(nullptr). 
+    // StateMachine should pass NoEventData to ST_Stop.
+    m.Halt(); 
+    ASSERT_TRUE(m.GetCurrentState() == 0); // ST_STOP -> ST_IDLE
+}
+
 // ---------------------------------------------------------------------------
 // RunStateMachineTests
 // ---------------------------------------------------------------------------
@@ -353,6 +444,9 @@ void RunStateMachineTests()
     TestGuardSelfTransitionBlocked(); cout << "  PASS TestGuardSelfTransitionBlocked" << endl;
     TestMultipleTransitions();        cout << "  PASS TestMultipleTransitions" << endl;
     TestConcurrentEventDispatch();    cout << "  PASS TestConcurrentEventDispatch" << endl;
+    TestParentTransition();           cout << "  PASS TestParentTransition" << endl;
+    TestSignalDisconnection();        cout << "  PASS TestSignalDisconnection" << endl;
+    TestNoEventDataCase();            cout << "  PASS TestNoEventDataCase" << endl;
 
     cout << "All StateMachine tests passed." << endl;
 }
