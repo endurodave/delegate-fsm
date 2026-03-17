@@ -35,7 +35,7 @@ public:
 
     void GoB()
     {
-        BEGIN_TRANSITION_MAP
+        BEGIN_TRANSITION_MAP(TestSM, GoB)
             TRANSITION_MAP_ENTRY(ST_B)  // ST_A
             TRANSITION_MAP_ENTRY(ST_B)  // ST_B (self-transition)
         END_TRANSITION_MAP(nullptr)
@@ -73,7 +73,7 @@ public:
     {
         PARENT_TRANSITION(derivedState)
         
-        BEGIN_TRANSITION_MAP
+        BEGIN_TRANSITION_MAP(ParentBase, CallBaseTransition, derivedState)
             TRANSITION_MAP_ENTRY(ST_IDLE)
         END_TRANSITION_MAP(nullptr)
     }
@@ -90,7 +90,7 @@ public:
     ChildDerived() : ParentBase(ST_MAX_STATES) {}
 
     void GoDerived() {
-        BEGIN_TRANSITION_MAP
+        BEGIN_TRANSITION_MAP(ChildDerived, GoDerived)
             TRANSITION_MAP_ENTRY(ST_DERIVED)  // ST_IDLE
             TRANSITION_MAP_ENTRY(ST_DERIVED)  // ST_DERIVED
         END_TRANSITION_MAP(nullptr)
@@ -119,7 +119,7 @@ public:
 
     void Run()
     {
-        BEGIN_TRANSITION_MAP
+        BEGIN_TRANSITION_MAP(StressMotor, Run)
             TRANSITION_MAP_ENTRY(ST_RUNNING)    // ST_IDLE
             TRANSITION_MAP_ENTRY(EVENT_IGNORED) // ST_RUNNING
         END_TRANSITION_MAP(nullptr)
@@ -127,7 +127,7 @@ public:
 
     void Stop()
     {
-        BEGIN_TRANSITION_MAP
+        BEGIN_TRANSITION_MAP(StressMotor, Stop)
             TRANSITION_MAP_ENTRY(EVENT_IGNORED) // ST_IDLE
             TRANSITION_MAP_ENTRY(ST_IDLE)       // ST_RUNNING
         END_TRANSITION_MAP(nullptr)
@@ -431,7 +431,7 @@ void RunStateMachineTests()
 
     TestInitialState();               cout << "  PASS TestInitialState" << endl;
     TestMaxStates();                  cout << "  PASS TestMaxStates" << endl;
-    TestBasicTransition();            cout << "  PASS TestBasicTransition" << endl;
+    TestBasicTransition() ;           cout << "  PASS TestBasicTransition" << endl;
     TestSelfTransitionDoesNotChangeState(); cout << "  PASS TestSelfTransitionDoesNotChangeState" << endl;
     TestInternalEventChain();         cout << "  PASS TestInternalEventChain" << endl;
     TestEventIgnored();               cout << "  PASS TestEventIgnored" << endl;

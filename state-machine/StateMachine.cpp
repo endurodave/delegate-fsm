@@ -1,4 +1,6 @@
 #include "StateMachine.h"
+#include "delegate-mq/predef/os/stdlib/Thread.h"
+#include <thread>
 
 using namespace dmq;
 
@@ -32,9 +34,9 @@ void StateMachine::ExternalEvent(uint8_t newState, std::shared_ptr<const EventDa
             ASSERT();
         }
 
-        if (m_smThread)
+        if (!IsOnStateMachineThread())
         {
-            MakeDelegate(this, &StateMachine::ExternalEventImpl, *m_smThread)(newState, pData);
+            MakeDelegate(this, &StateMachine::ExternalEventImpl, *m_thread)(newState, pData);
         }
         else
             ExternalEventImpl(newState, pData);
@@ -65,6 +67,21 @@ void StateMachine::InternalEvent(uint8_t newState, std::shared_ptr<const EventDa
     m_pEventData = pData;
     m_eventGenerated = true;
     m_newState = newState;
+}
+
+//----------------------------------------------------------------------------
+// IsOnStateMachineThread
+//----------------------------------------------------------------------------
+bool StateMachine::IsOnStateMachineThread() const
+{
+    if (!m_thread)
+        return true;
+
+    // GetThreadId() is not a const member in Thread class, so we cast to non-const Thread*.
+    // Since m_thread is a pointer member, we can still call non-const methods on the 
+    // pointed-to object even from a const StateMachine method.
+    Thread* thread = static_cast<Thread*>(m_thread);
+    return thread->GetThreadId() == Thread::GetCurrentThreadId();
 }
 
 //----------------------------------------------------------------------------

@@ -12,7 +12,7 @@ void SelfTest::Cancel()
 {
     PARENT_TRANSITION(ST_FAILED)
 
-    BEGIN_TRANSITION_MAP                        // - Current State -
+    BEGIN_TRANSITION_MAP(SelfTest, Cancel)      // - Current State -
         TRANSITION_MAP_ENTRY(EVENT_IGNORED)     // ST_IDLE
         TRANSITION_MAP_ENTRY(CANNOT_HAPPEN)     // ST_COMPLETED
         TRANSITION_MAP_ENTRY(CANNOT_HAPPEN)     // ST_FAILED

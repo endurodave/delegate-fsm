@@ -1,6 +1,24 @@
 #ifndef _STATE_MACHINE_H
 #define _STATE_MACHINE_H
 
+// StateMachine.h
+// A compact, table-driven C++ finite state machine (FSM) framework.
+// 
+// It uses a memory-efficient table-driven core while adding publisher/subscriber 
+// signals and an optional asynchronous active-object mode using DelegateMQ.
+// 
+// Features:
+// - Memory efficient (static state maps)
+// - Support for guards, entry, and exit actions
+// - Type-safe event data using std::shared_ptr
+// - Built-in async active-object support via SetThread()
+// - Pub/sub observation signals (OnTransition, OnEntry, OnExit, OnCannotHappen)
+// - State machine inheritance support
+// - Minimal heap/RAM footprint
+// 
+// @see https://github.com/endurodave/delegate-fsm
+// @author David Lafreniere (2000-2026)
+
 #include <cstdint>
 #include <typeinfo>
 #include <memory>
@@ -176,7 +194,7 @@ public:
 
     /// Enable active-object mode. ExternalEvent will marshal to @p thread.
     /// Call before the first ExternalEvent. 
-    void SetThread(dmq::IThread& thread) { m_smThread = &thread; }
+    void SetThread(dmq::IThread& thread) { m_thread = &thread; }
 
     /// Fired after every completed state action: (fromState, toState).
     /// fromState == toState indicates a self-transition.
@@ -202,6 +220,14 @@ protected:
     /// @param[in] newState - the state machine state to transition to.
     /// @param[in] pData - the event data sent to the state.
     void InternalEvent(uint8_t newState, std::shared_ptr<const EventData> pData = nullptr);
+
+    /// Helper function to determine if the current thread is the state machine thread.
+    /// @return True if on the state machine thread or synchronous mode.
+    bool IsOnStateMachineThread() const;
+
+    /// Gets the state machine thread pointer. 
+    /// @return The thread pointer or nullptr if synchronous mode.
+    dmq::IThread* GetThread() const { return m_thread; }
 	
 private:
     /// The maximum number of state machine states.
@@ -220,7 +246,7 @@ private:
     std::shared_ptr<const EventData> m_pEventData;
 
     /// Optional SM thread. Non-null enables active-object async dispatch.
-    dmq::IThread* m_smThread = nullptr;
+    dmq::IThread* m_thread = nullptr;
 
     /// Gets the state map as defined in the derived class. The BEGIN_STATE_MAP,
     /// STATE_MAP_ENTRY and END_STATE_MAP macros are used to assist in creating the
@@ -280,7 +306,11 @@ private:
 #define EXIT_DEFINE(stateMachine, exitName) \
     void stateMachine::EX_##exitName(void)
 
-#define BEGIN_TRANSITION_MAP \
+#define BEGIN_TRANSITION_MAP(stateMachine, func, ...) \
+    if (!IsOnStateMachineThread()) { \
+        dmq::MakeDelegate(this, &stateMachine::func, *GetThread())(__VA_ARGS__); \
+        return; \
+    } \
     static const uint8_t TRANSITIONS[] = {\
 
 #define TRANSITION_MAP_ENTRY(entry)\

@@ -5,7 +5,7 @@
 
 # State Machine Design in C++
 
-A compact, table-driven C++ finite state machine (FSM) with asynchronous active-object and signal-slot event notification. Runs on embedded and PC targets, any operating system.
+A compact, table-driven C++ finite state machine (FSM) with asynchronous active-object and signal-slot event notification. Extensively unit tested. Runs on embedded and PC targets, any operating system.
 
 # Table of Contents
 
@@ -17,6 +17,7 @@ A compact, table-driven C++ finite state machine (FSM) with asynchronous active-
 - [Introduction](#introduction)
   - [Background](#background)
   - [State Machine Comparison](#state-machine-comparison)
+  - [DelegateMQ Integration](#delegatemq-integration)
   - [Why use a state machine?](#why-use-a-state-machine)
 - [State machine design](#state-machine-design)
   - [Internal and external events](#internal-and-external-events)
@@ -46,19 +47,15 @@ A compact, table-driven C++ finite state machine (FSM) with asynchronous active-
 
 # Preface
 
-Originally published on CodeProject at: [**State Machine Design in C++**](https://www.codeproject.com/Articles/1087619/State-Machine-Design-in-Cplusplus)
-
-Based on original design published in C\C++ Users Journal (Dr. Dobb's) at: [**State Machine Design in C++**](http://www.drdobbs.com/cpp/state-machine-design-in-c/184401236)
+Based on original article "State Machine Design in C++" published in C\C++ Users Journal (Dr. Dobb's) May 2000.
 
 ## Related repositories
-
-The following repositories offer various implementations of finite state machines, ranging from compact single-threaded versions to advanced asynchronous frameworks utilizing the Signal-Slot pattern.
 
 | Project | Description |
 | :--- | :--- |
 | [**State Machine Design in C**](https://github.com/endurodave/C_StateMachine) | A compact C language finite state machine (FSM) implementation. |
 | [**State Machine Design in C++**](https://github.com/endurodave/StateMachine) | A compact C++ language finite state machine (FSM) implementation. |
-| [**DelegateMQ**](https://github.com/endurodave/DelegateMQ) | A messaging middleware that provides a thread-safe way to communicate between objects across thread, process, or network boundaries. It provides the asynchronous dispatch and pub/sub signals used by this project. |
+| [**DelegateMQ**](https://github.com/endurodave/DelegateMQ) | A messaging middleware providing RAII-safe asynchronous dispatch and pub/sub signals. |
 
 
 # Getting Started
@@ -80,7 +77,7 @@ build\Debug\StateMachineApp.exe  # Windows
 
 In 2000, I wrote an article entitled "*State Machine Design in C++*" for C/C++ Users Journal (R.I.P.). The article was written over 25 years ago, but I continue to use the basic idea on numerous projects. It's compact, easy to understand and, in most cases, has just enough features to accomplish what I need.
 
-This new 2026 implementation updates the classic design with modern DelegateMQ features. It uses a compact table-driven core that makes the original design so practical for embedded and PC targets alike, while adding publisher/subscriber signals and an optional asynchronous active-object mode.
+This new implementation updates the classic design with modern DelegateMQ features. It uses a compact table-driven core that makes the original design so practical for embedded and PC targets alike, while adding publisher/subscriber signals and an optional asynchronous active-object mode.
 
 This state machine has the following features:
 
@@ -114,7 +111,16 @@ The table below highlights the architectural evolution from the [original](https
 | **Language Standard** | Pre-C++98 / C++98 | C++17 |
 | **Type Safety** | `dynamic_cast` | `std::static_pointer_cast` + `ASSERT` |
 | **Dependencies** | None | DelegateMQ |
+| **Integer Types** | `BYTE` / `BOOL` (Platform specific) | `uint8_t` / `bool` (Standard C++) |
 | **Compile-time Checks** | `C_ASSERT` (Macro-based) | `static_assert` (Language-native) |
+
+## DelegateMQ Integration
+
+[DelegateMQ](https://github.com/endurodave/DelegateMQ) is a messaging middleware that enables objects to communicate asynchronously and across different threads. It is "infused" into this state machine to provide:
+
+*   **Asynchronous active-object support** – events can be automatically marshaled to a dedicated state machine thread.
+*   **Pub/Sub signals** – external observers can subscribe to state transitions and other events without the need for subclassing.
+*   **RAII safety** – integrated support for `std::shared_ptr` ensures that event data and object lifetimes are managed automatically.
 
 ## Why use a state machine?
 
@@ -173,6 +179,8 @@ The state machine uses `std::shared_ptr<const EventData>` to manage event data l
 
 When an external event is generated, a lookup is performed to determine the state transition course of action. There are three possible outcomes to an event: new state, event ignored, or cannot happen. A new state causes a transition to a new state where it is allowed to execute. For an ignored event, no state executes. The last possibility, cannot happen, is reserved for situations where the event is not valid given the current state of the state machine. If this occurs, the `OnCannotHappen` signal fires and the software faults.
 
+In asynchronous mode, the `BEGIN_TRANSITION_MAP` macro automatically marshals the entire external event function call to the state machine thread if the caller is on a different thread. This ensures that the transition map lookup (which depends on the current state) is always thread-safe and deterministic.
+
 # StateMachine class
 
 Inherit from `StateMachine` to create a new state machine. Use macros to declare and define states.
@@ -229,12 +237,12 @@ END_STATE_MAP_EX
 
 ## Transition map
 
-A transition map is defined in each external event function:
+A transition map is defined in each external event function. The `BEGIN_TRANSITION_MAP` macro requires the class name, function name, and any arguments to support thread-safe reinvocation.
 
 ```cpp
 void Motor::Halt()
 {
-    BEGIN_TRANSITION_MAP
+    BEGIN_TRANSITION_MAP(Motor, Halt)        // - Current State -
         TRANSITION_MAP_ENTRY(EVENT_IGNORED)  // ST_IDLE
         TRANSITION_MAP_ENTRY(ST_STOP)        // ST_START
         ...
@@ -317,7 +325,7 @@ void CentrifugeTest::ST_Idle(std::shared_ptr<const NoEventData> data)
 
 # Multithread safety
 
-Structural thread safety is provided via active-object dispatch; no explicit locks needed inside the state machine when `SetThread()` is used.
+Structural thread safety is provided via active-object dispatch; no explicit locks needed inside the state machine when `SetThread()` is used. The `BEGIN_TRANSITION_MAP` macro ensures that transition logic always executes on the state machine's thread.
 
 # Fixed-block allocator
 

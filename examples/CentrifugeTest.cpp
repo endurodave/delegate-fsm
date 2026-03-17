@@ -6,27 +6,27 @@ using namespace dmq;
 
 CentrifugeTest::CentrifugeTest() :
     SelfTest(ST_MAX_STATES),
-    m_smThread("CentrifugeTestSMThread"),
+    m_threadObj("CentrifugeTestSMThread"),
     m_speed(0)
 {
-    m_smThread.CreateThread();
-    SetThread(m_smThread);
+    m_threadObj.CreateThread();
+    SetThread(m_threadObj);
 
     // When the poll timer fires (via ProcessTimers on the caller's thread),
     // dispatch Poll() asynchronously onto the SM thread.
     m_pollTimerConn = m_pollTimer.OnExpired.Connect(
-        MakeDelegate(this, &CentrifugeTest::Poll, m_smThread));
+        MakeDelegate(this, &CentrifugeTest::Poll, m_threadObj));
 }
 
 CentrifugeTest::~CentrifugeTest()
 {
     m_pollTimer.Stop();
-    m_smThread.ExitThread();
+    m_threadObj.ExitThread();
 }
 
 void CentrifugeTest::Start()
 {
-    BEGIN_TRANSITION_MAP                            // - Current State -
+    BEGIN_TRANSITION_MAP(CentrifugeTest, Start)     // - Current State -
         TRANSITION_MAP_ENTRY(ST_START_TEST)         // ST_IDLE
         TRANSITION_MAP_ENTRY(CANNOT_HAPPEN)         // ST_COMPLETED
         TRANSITION_MAP_ENTRY(CANNOT_HAPPEN)         // ST_FAILED
@@ -40,7 +40,7 @@ void CentrifugeTest::Start()
 
 void CentrifugeTest::Poll()
 {
-    BEGIN_TRANSITION_MAP                                    // - Current State -
+    BEGIN_TRANSITION_MAP(CentrifugeTest, Poll)              // - Current State -
         TRANSITION_MAP_ENTRY(EVENT_IGNORED)                 // ST_IDLE
         TRANSITION_MAP_ENTRY(EVENT_IGNORED)                 // ST_COMPLETED
         TRANSITION_MAP_ENTRY(EVENT_IGNORED)                 // ST_FAILED

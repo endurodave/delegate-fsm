@@ -1,13 +1,13 @@
 // main.cpp
 // Example driver exercising the delegate-based FSM framework.
-// Demonstrates synchronous, asynchronous active-object, and polling patterns
-// using Motor, Player, and CentrifugeTest state machines.
+// Demonstrates synchronous, asynchronous active-object, and polling patterns.
 // @see https://github.com/endurodave/StateMachine
 // David Lafreniere
 
 #include "examples/Motor.h"
 #include "examples/Player.h"
 #include "examples/CentrifugeTest.h"
+#include "examples/TcpConnection.h"
 #include "unit-tests/StateMachineTests.h"
 #include "delegate-mq/DelegateMQ.h"
 #include "delegate-mq/predef/util/Fault.h"
@@ -156,6 +156,41 @@ int main()
     test.Cancel();
     test.Start();
     testDone.get_future().get();   // blocks until OnComplete fires on SM thread
+
+    // -----------------------------------------------------------------------
+    // TcpConnection (asynchronous)
+    // -----------------------------------------------------------------------
+    cout << "\n=== TcpConnection (Active Object) ===" << endl;
+
+    TcpConnection tcp;
+    
+    auto tcpConn = tcp.OnTransition.Connect(
+        MakeDelegate(std::function<void(uint8_t, uint8_t)>(
+            [](uint8_t from, uint8_t to) {
+                cout << "  [TCP transition " << (int)from << " -> " << (int)to << "]" << endl;
+            })));
+
+    cout << "Initiating Active Open..." << endl;
+    tcp.ActiveOpen();
+
+    // Simulate network packets
+    auto synAck = xmake_shared<TcpData>(); synAck->syn = true; synAck->ack = true;
+    cout << "Receiving SYN+ACK packet..." << endl;
+    tcp.HandlePacket(synAck);
+
+    cout << "Initiating Close..." << endl;
+    tcp.Close();
+
+    auto fin = xmake_shared<TcpData>(); fin->fin = true;
+    cout << "Receiving FIN packet..." << endl;
+    tcp.HandlePacket(fin);
+
+    auto ack = xmake_shared<TcpData>(); ack->ack = true;
+    cout << "Receiving ACK packet..." << endl;
+    tcp.HandlePacket(ack);
+
+    // Give some time for async transitions to finish
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     processTimerExit = true;
     timerThread.join();

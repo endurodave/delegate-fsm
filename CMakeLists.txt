@@ -48,3 +48,13 @@ include_directories(
 )
 
 add_executable(StateMachineApp ${SOURCES} ${DMQ_LIB_SOURCES})
+
+# -----------------------------------------------------------------------------
+# PRECOMPILED HEADERS (PCH)
+# This single command works for both MSVC (Windows) and GCC/Clang (Linux).
+# It compiles DelegateMQ.h once and auto-includes it into every source file
+# in the target, significantly speeding up compilation.
+# -----------------------------------------------------------------------------
+target_precompile_headers(StateMachineApp PRIVATE 
+    "${CMAKE_SOURCE_DIR}/delegate-mq/DelegateMQ.h"
+)

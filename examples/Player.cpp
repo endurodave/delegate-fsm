@@ -10,7 +10,7 @@ Player::Player() :
 
 void Player::OpenClose()
 {
-    BEGIN_TRANSITION_MAP                        // - Current State -
+    BEGIN_TRANSITION_MAP(Player, OpenClose)     // - Current State -
         TRANSITION_MAP_ENTRY(ST_OPEN)           // ST_EMPTY
         TRANSITION_MAP_ENTRY(ST_EMPTY)          // ST_OPEN
         TRANSITION_MAP_ENTRY(ST_OPEN)           // ST_STOPPED
@@ -21,7 +21,7 @@ void Player::OpenClose()
 
 void Player::Play()
 {
-    BEGIN_TRANSITION_MAP                        // - Current State -
+    BEGIN_TRANSITION_MAP(Player, Play)          // - Current State -
         TRANSITION_MAP_ENTRY(EVENT_IGNORED)     // ST_EMPTY
         TRANSITION_MAP_ENTRY(EVENT_IGNORED)     // ST_OPEN
         TRANSITION_MAP_ENTRY(ST_PLAYING)        // ST_STOPPED
@@ -32,7 +32,7 @@ void Player::Play()
 
 void Player::Stop()
 {
-    BEGIN_TRANSITION_MAP                        // - Current State -
+    BEGIN_TRANSITION_MAP(Player, Stop)          // - Current State -
         TRANSITION_MAP_ENTRY(EVENT_IGNORED)     // ST_EMPTY
         TRANSITION_MAP_ENTRY(EVENT_IGNORED)     // ST_OPEN
         TRANSITION_MAP_ENTRY(ST_STOPPED)        // ST_STOPPED
@@ -43,7 +43,7 @@ void Player::Stop()
 
 void Player::Pause()
 {
-    BEGIN_TRANSITION_MAP                        // - Current State -
+    BEGIN_TRANSITION_MAP(Player, Pause)         // - Current State -
         TRANSITION_MAP_ENTRY(EVENT_IGNORED)     // ST_EMPTY
         TRANSITION_MAP_ENTRY(EVENT_IGNORED)     // ST_OPEN
         TRANSITION_MAP_ENTRY(EVENT_IGNORED)     // ST_STOPPED
@@ -54,7 +54,7 @@ void Player::Pause()
 
 void Player::EndPause()
 {
-    BEGIN_TRANSITION_MAP                        // - Current State -
+    BEGIN_TRANSITION_MAP(Player, EndPause)      // - Current State -
         TRANSITION_MAP_ENTRY(EVENT_IGNORED)     // ST_EMPTY
         TRANSITION_MAP_ENTRY(EVENT_IGNORED)     // ST_OPEN
         TRANSITION_MAP_ENTRY(EVENT_IGNORED)     // ST_STOPPED
