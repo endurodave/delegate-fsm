@@ -1,11 +1,11 @@
 ![License MIT](https://img.shields.io/github/license/BehaviorTree/BehaviorTree.CPP?color=blue)
-[![conan Ubuntu](https://github.com/endurodave/StateMachine/actions/workflows/cmake_ubuntu.yml/badge.svg)](https://github.com/endurodave/StateMachine/actions/workflows/cmake_ubuntu.yml)
-[![conan Ubuntu](https://github.com/endurodave/StateMachine/actions/workflows/cmake_clang.yml/badge.svg)](https://github.com/endurodave/StateMachine/actions/workflows/cmake_clang.yml)
-[![conan Windows](https://github.com/endurodave/StateMachine/actions/workflows/cmake_windows.yml/badge.svg)](https://github.com/endurodave/StateMachine/actions/workflows/cmake_windows.yml)
+[![conan Ubuntu](https://github.com/endurodave/active-fsm/actions/workflows/cmake_ubuntu.yml/badge.svg)](https://github.com/endurodave/active-fsm/actions/workflows/cmake_ubuntu.yml)
+[![conan Ubuntu](https://github.com/endurodave/active-fsm/actions/workflows/cmake_clang.yml/badge.svg)](https://github.com/endurodave/active-fsm/actions/workflows/cmake_clang.yml)
+[![conan Windows](https://github.com/endurodave/active-fsm/actions/workflows/cmake_windows.yml/badge.svg)](https://github.com/endurodave/active-fsm/actions/workflows/cmake_windows.yml)
 
 # Active-Object State Machine in C++
 
-A compact, table-driven C++ finite state machine (FSM) with asynchronous active-object and signal-slot event notification. Extensively unit tested. Runs on embedded and PC targets, any operating system.
+A compact, table-driven C++ finite state machine (FSM) with optional hierarchical state machine (HSM) support, asynchronous active-object dispatch, and signal-slot event notification. Extensively unit tested. Runs on embedded and PC targets, any operating system.
 
 # Table of Contents
 
@@ -31,15 +31,19 @@ A compact, table-driven C++ finite state machine (FSM) with asynchronous active-
 - [Asynchronous active-object mode](#asynchronous-active-object-mode)
 - [State machine inheritance](#state-machine-inheritance)
 - [State function inheritance](#state-function-inheritance)
+- [Hierarchical state machine (HSM)](#hierarchical-state-machine-hsm)
+  - [StateMachineHSM class](#statemachinehsm-class)
+  - [HSM state map](#hsm-state-map)
+  - [HSM transition map and propagation](#hsm-transition-map-and-propagation)
+  - [Entry and exit sequencing](#entry-and-exit-sequencing)
+  - [AlarmPanel example](#alarmpanel-example)
 - [Multithread safety](#multithread-safety)
 - [Fixed-block allocator](#fixed-block-allocator)
-- [State Machine Comparison](#state-machine-comparison)
 - [Comparison with other libraries](#comparison-with-other-libraries)
     - [Boost.MSM](#boostmsm)
     - [Boost.Statechart](#booststatechart)
     - [SML (kgrzybek)](#sml-kgrzybek)
     - [TinyFSM](#tinyfsm)
-    - [QP/C++](#qpc)
     - [Summary](#summary)
 
 
@@ -82,8 +86,9 @@ This state machine has the following features:
 6. **Signals** – `OnTransition`, `OnEntry`, `OnExit`, and `OnCannotHappen` pub/sub signals allow external observers to react to state changes.
 7. **Async active-object mode** – calling `SetThread()` enables active-object dispatch; `ExternalEvent()` marshals to the SM thread and returns immediately.
 8. **State machine inheritance** – supports inheriting states from a base state machine class.
-9. **Type safe** – compile-time checks via templates and macros catch signature mismatches.
-10. **Modern C++** – uses `uint8_t`, `bool`, and `std::shared_ptr` for better safety and clarity.
+9. **Hierarchical state machine (HSM)** – `StateMachineHSM` extends `StateMachine` with parent states, LCA-based entry/exit sequencing, and `PROPAGATE_TO_PARENT` transition entries.
+10. **Type safe** – compile-time checks via templates and macros catch signature mismatches.
+11. **Modern C++** – uses `uint8_t`, `bool`, and `std::shared_ptr` for better safety and clarity.
 
 ## DelegateMQ Integration
 
@@ -294,6 +299,102 @@ void CentrifugeTest::ST_Idle(std::shared_ptr<const NoEventData> data)
 }
 ```
 
+# Hierarchical state machine (HSM)
+
+`StateMachineHSM` extends `StateMachine` with a two-level hierarchy. Each state may declare a parent state. On a transition, exit actions walk up from the current state to (but not including) the Least Common Ancestor (LCA), and entry actions walk down from the LCA to the target state. States with no parent are top-level states.
+
+The key benefit over a flat FSM is that shared behavior lives in the parent state once. Child states inherit transitions from the parent without duplicating them, and parent entry/exit actions activate or deactivate hardware for the entire composite state regardless of which child is active.
+
+## StateMachineHSM class
+
+Inherit from `StateMachineHSM` instead of `StateMachine`. The public API — `SetThread()`, signals, `GetCurrentState()` — is identical.
+
+```cpp
+class StateMachineHSM : public StateMachine {
+public:
+    enum { NO_PARENT = 0xFD, PROPAGATE_TO_PARENT = 0xFC };
+
+    StateMachineHSM(uint8_t maxStates, uint8_t initialState = 0);
+};
+```
+
+`NO_PARENT` is used in the state map to mark top-level states. `PROPAGATE_TO_PARENT` is used in transition maps to delegate event handling to the parent state.
+
+## HSM state map
+
+The HSM state map uses `BEGIN_STATE_MAP_HSM` / `END_STATE_MAP_HSM`. Each entry adds a `ParentState` field after the four standard columns.
+
+```cpp
+//                                State     Guard    Entry          Exit        Parent
+BEGIN_STATE_MAP_HSM
+    STATE_MAP_ENTRY_ALL_HSM(&Disarmed,  nullptr, nullptr,       nullptr,    NO_PARENT)
+    STATE_MAP_ENTRY_ALL_HSM(&Armed,     nullptr, &EntryArmed,   &ExitArmed, NO_PARENT)
+    STATE_MAP_ENTRY_ALL_HSM(&ArmedHome, nullptr, &EntryArmedHome, nullptr,  ST_ARMED)
+    STATE_MAP_ENTRY_ALL_HSM(&ArmedAway, nullptr, &EntryArmedAway, nullptr,  ST_ARMED)
+    STATE_MAP_ENTRY_ALL_HSM(&Alarming,  nullptr, nullptr,       nullptr,    NO_PARENT)
+END_STATE_MAP_HSM
+```
+
+`STATE_MAP_ENTRY_HSM(stateName, parentState)` is the shorthand form with no guard, entry, or exit.
+
+## HSM transition map and propagation
+
+Replace `END_TRANSITION_MAP` with `END_TRANSITION_MAP_HSM`. The new macro resolves `PROPAGATE_TO_PARENT` entries by walking up the parent chain before calling `ExternalEvent`, so the engine never receives a propagation sentinel as a raw target state.
+
+```cpp
+void AlarmPanel::Disarm()
+{
+    BEGIN_TRANSITION_MAP(AlarmPanel, Disarm)        // - Current State -
+        TRANSITION_MAP_ENTRY(EVENT_IGNORED)         // ST_DISARMED
+        TRANSITION_MAP_ENTRY(ST_DISARMED)           // ST_ARMED      <-- parent handles it
+        TRANSITION_MAP_ENTRY(PROPAGATE_TO_PARENT)   // ST_ARMED_HOME --> ST_ARMED
+        TRANSITION_MAP_ENTRY(PROPAGATE_TO_PARENT)   // ST_ARMED_AWAY --> ST_ARMED
+        TRANSITION_MAP_ENTRY(ST_DISARMED)           // ST_ALARMING
+    END_TRANSITION_MAP_HSM(nullptr)
+}
+```
+
+When `Disarm` is called from `ST_ARMED_HOME`, `END_TRANSITION_MAP_HSM` sees `PROPAGATE_TO_PARENT`, looks up `ST_ARMED_HOME`'s parent (`ST_ARMED`), and uses `ST_ARMED`'s entry (`ST_DISARMED`) as the resolved target — all before `ExternalEvent` is invoked.
+
+## Entry and exit sequencing
+
+The HSM state engine computes the LCA of the current state and the target state, then:
+
+1. Calls exit actions from the current state up to (not including) the LCA.
+2. Calls entry actions from just below the LCA down to the target state (parent-first order).
+3. Calls the target state's action function.
+4. Fires `OnTransition`.
+
+For a sibling transition (`ST_ARMED_HOME` → `ST_ARMED_AWAY`), the LCA is `ST_ARMED`, so `EntryArmed` and `ExitArmed` do **not** fire — the hardware is not needlessly deactivated and reactivated between sibling states.
+
+For a cross-hierarchy transition (`ST_ARMED_HOME` → `ST_ALARMING`), the LCA is `NO_PARENT`, so `ExitArmed` fires (deactivating sensors) before `ST_ALARMING` is entered.
+
+## AlarmPanel example
+
+`AlarmPanel` (`examples/AlarmPanel.h`) demonstrates a two-level hierarchy:
+
+```
+DISARMED     (top-level)
+ARMED        (top-level, composite parent)
+  ARMED_HOME   (child of ARMED)
+  ARMED_AWAY   (child of ARMED)
+ALARMING     (top-level)
+```
+
+`EntryArmed` and `ExitArmed` activate and deactivate sensors once for the entire `ARMED` composite state, regardless of which child is entered or exited. Both `ARMED_HOME` and `ARMED_AWAY` propagate `Disarm` and `Trigger` to `ARMED`, which handles them in one place.
+
+```
+AlarmPanel: [entry ARMED] activating sensors       ← fires on ArmHome or ArmAway
+AlarmPanel: [entry ARMED_HOME] interior motion disabled
+AlarmPanel: armed HOME — perimeter sensors active
+
+AlarmPanel: [entry ARMED_AWAY] full coverage enabled   ← Toggle: no ARMED entry/exit
+AlarmPanel: armed AWAY — all sensors active
+
+AlarmPanel: [exit ARMED] deactivating sensors      ← fires on Disarm or Trigger
+AlarmPanel: *** ALARM *** zone 3 — contacting emergency services
+```
+
 # Multithread safety
 
 Structural thread safety is provided via active-object dispatch; no explicit locks needed inside the state machine when `SetThread()` is used. The `BEGIN_TRANSITION_MAP` macro ensures that transition logic always executes on the state machine's thread.
@@ -302,43 +403,24 @@ Structural thread safety is provided via active-object dispatch; no explicit loc
 
 This project includes an optional fixed-block pool allocator, `xallocator`. When `DMQ_ALLOCATOR` is enabled, `xmake_shared` allocates memory from pre-sized pools. Using `std::shared_ptr` with `xmake_shared` ensures that both the object and the `shared_ptr` control block are allocated from the fixed-block pool.
 
-# State Machine Comparison
-
-The table below highlights the architectural evolution from the [original](https://github.com/endurodave/StateMachine) design to this [modern](https://github.com/endurodave/active-fsm) implementation.
-
-| Feature | Original FSM | Modern FSM |
-| :--- | :--- | :--- |
-| **Event Data Management** | Raw Pointers (Manual `delete`) | `std::shared_ptr` (RAII/Automatic) |
-| **Async Support** | Synchronous only | Built-in Active Object (`SetThread`) |
-| **Notification** | Subclassing / Virtual functions | Pub/Sub Signals (`OnTransition`, etc.) |
-| **Thread Safety** | None (Caller responsibility) | Structural (via DelegateMQ dispatch) |
-| **Memory Allocation** | Global Heap (`new`/`delete`) | Fixed-block Pools (`XALLOCATOR`) |
-| **State Storage** | Static Table (Memory efficient) | Static Table (Memory efficient) |
-| **Language Standard** | Pre-C++98 / C++98 | C++17 |
-| **Type Safety** | `dynamic_cast` | `std::static_pointer_cast` + `ASSERT` |
-| **Dependencies** | None | DelegateMQ |
-| **Integer Types** | `BYTE` / `BOOL` (Platform specific) | `uint8_t` / `bool` (Standard C++) |
-| **Compile-time Checks** | `C_ASSERT` (Macro-based) | `static_assert` (Language-native) |
-
 # Comparison with other libraries
 
 The table below compares this implementation against several widely used C++ state machine libraries across the features most relevant to embedded and multithreaded applications.
 
-| Feature | This implementation | Boost.MSM | Boost.Statechart | SML (kgrzybek) | TinyFSM | QP/C++ |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| Compact binary footprint | ✓ | — | — | ✓ | ✓ | — |
-| No external dependencies | — | — | — | ✓ | ✓ | — |
-| Embedded-friendly | ✓ | — | — | ✓ | ✓ | ✓ |
-| Runtime state registration | ✓ | — | — | — | — | — |
-| Typed event data per state | ✓ | ✓ | ✓ | ✓ | — | ✓ |
-| Guard conditions | ✓ | ✓ | ✓ | ✓ | — | ✓ |
-| Entry / exit actions | ✓ | ✓ | ✓ | ✓ | — | ✓ |
-| State machine inheritance | ✓ | — | ✓ | — | — | ✓ |
-| Built-in async active-object | ✓ | — | — | — | — | ✓ |
-| Pub/sub signals (OnTransition etc.) | ✓ | — | — | — | — | — |
-| `shared_ptr` event data (async safe) | ✓ | — | — | — | — | — |
-| Hierarchical SM (HSM) | — | ✓ | ✓ | — | — | ✓ |
-| Compile-time transition checking | partial | ✓ | — | ✓ | ✓ | — |
+| Feature | This implementation | Boost.MSM | Boost.Statechart | SML (kgrzybek) | TinyFSM |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| Compact binary footprint | ✓ | — | — | ✓ | ✓ |
+| Embedded-friendly | ✓ | — | — | ✓ | ✓ |
+| Runtime state registration | ✓ | — | — | — | — |
+| Typed event data per state | ✓ | ✓ | ✓ | ✓ | — |
+| Guard conditions | ✓ | ✓ | ✓ | ✓ | — |
+| Entry / exit actions | ✓ | ✓ | ✓ | ✓ | ✓ |
+| State machine inheritance | ✓ | — | ✓ | — | — |
+| Built-in async active-object | ✓ | — | — | — | — |
+| Pub/sub signals (OnTransition etc.) | ✓ | — | — | — | — |
+| `shared_ptr` event data (async safe) | ✓ | — | — | — | — |
+| Hierarchical SM (HSM) | ✓ | ✓ | ✓ | — | — |
+| Compile-time transition checking | partial | ✓ | — | ✓ | ✓ |
 
 ### Boost.MSM
 
@@ -356,10 +438,6 @@ SML is a modern, header-only C++14 library that defines transitions using a conc
 
 TinyFSM is designed specifically for small embedded targets. The entire library is a single header with no dependencies, and dispatch is done through `static` member functions — effectively one state machine instance per type. This makes it very simple and very fast, but it means you cannot have two independent instances of the same state machine class. There is no support for per-transition typed event data, guards, or entry/exit actions in the base design.
 
-### QP/C++
-
-QP/C++ is a full embedded RTOS framework built around hierarchical active objects. It is battle-tested in safety-critical systems and supports a rich UML-compliant HSM with orthogonal regions, deferred events, and publish/subscribe. The active-object model provides the same structural thread safety as `SetThread()` here. The tradeoff is that QP is an entire framework, not a library you drop into an existing project — it brings its own event pool, time-event management, and RTOS abstraction layer. Commercial use may require a license.
-
 ### Summary
 
-This implementation occupies the practical middle ground. It maintains the memory efficiency of the classic table-driven design but modernizes it with `std::shared_ptr` for safety and DelegateMQ for powerful async and observation features. It is compact, embedded-friendly, and uniquely adds a built-in async active-object mode and pub/sub signals that none of the others provide out of the box.
+This implementation occupies the practical middle ground. It maintains the memory efficiency of the classic table-driven design but modernizes it with `std::shared_ptr` for safety and DelegateMQ for powerful async and observation features. It is compact, embedded-friendly, and uniquely adds a built-in async active-object mode, pub/sub signals, and an optional hierarchical state machine (`StateMachineHSM`) that none of the others provide together out of the box.

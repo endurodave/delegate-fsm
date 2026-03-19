@@ -222,10 +222,26 @@ protected:
     /// @return True if on the state machine thread or synchronous mode.
     bool IsOnStateMachineThread() const;
 
-    /// Gets the state machine thread pointer. 
+    /// Gets the state machine thread pointer.
     /// @return The thread pointer or nullptr if synchronous mode.
     dmq::IThread* GetThread() const { return m_thread; }
-	
+
+    /// Set a new current state.
+    /// @param[in] newState - the new state.
+    void SetCurrentState(uint8_t newState) { m_currentState = newState; }
+
+    /// Accessors for subclass StateEngine overrides (e.g. StateMachineHSM).
+    uint8_t GetNewState() const { return m_newState; }
+    bool IsEventPending() const { return m_eventGenerated; }
+    void ConsumeEvent(std::shared_ptr<const EventData>& outData) {
+        outData = m_pEventData;
+        m_pEventData = nullptr;
+        m_eventGenerated = false;
+    }
+
+    /// State machine engine — virtual so subclasses (e.g. StateMachineHSM) can override.
+    virtual void StateEngine();
+
 private:
     /// The maximum number of state machine states.
     const uint8_t MAX_STATES;
@@ -261,16 +277,9 @@ private:
     /// NULL if the state machine uses the GetStateMap().
     virtual const StateMapRowEx* GetStateMapEx() = 0;
 
-    /// Set a new current state.
-    /// @param[in] newState - the new state.
-    void SetCurrentState(uint8_t newState) { m_currentState = newState; }
-
     /// ExternalEvent execution helper.
     void ExternalEventImpl(uint8_t newState, std::shared_ptr<const EventData> pData);
 
-    /// State machine engine that executes the external event and, optionally, all 
-    /// internal events generated during state execution.
-    void StateEngine(void); 	
     void StateEngine(const StateMapRow* const pStateMap);
     void StateEngine(const StateMapRowEx* const pStateMapEx);
 };

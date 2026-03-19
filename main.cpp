@@ -8,7 +8,9 @@
 #include "examples/Player.h"
 #include "examples/CentrifugeTest.h"
 #include "examples/TcpConnection.h"
+#include "examples/AlarmPanel.h"
 #include "unit-tests/StateMachineTests.h"
+#include "unit-tests/StateMachineHSMTests.h"
 #include "delegate-mq/DelegateMQ.h"
 #include "delegate-mq/predef/util/Fault.h"
 #include "delegate-mq/predef/util/Timer.h"
@@ -192,10 +194,46 @@ int main()
     // Give some time for async transitions to finish
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
+    // -----------------------------------------------------------------------
+    // AlarmPanel — HSM example
+    // Demonstrates PROPAGATE_TO_PARENT and parent entry/exit actions.
+    // -----------------------------------------------------------------------
+    cout << "\n=== AlarmPanel (HSM) ===" << endl;
+
+    AlarmPanel alarm;
+
+    // Arm in home mode: DISARMED → ARMED (entry) → ARMED_HOME (entry) → action
+    cout << "\n-- ArmHome --" << endl;
+    alarm.ArmHome();
+
+    // Toggle between home and away: sibling transition, ARMED entry/exit not repeated
+    cout << "\n-- Toggle (home -> away) --" << endl;
+    alarm.Toggle();
+
+    cout << "\n-- Toggle (away -> home) --" << endl;
+    alarm.Toggle();
+
+    // Trigger from ARMED_HOME: propagates to ARMED → ALARMING
+    // Exit sequence: ARMED_HOME (no exit), ARMED (ExitArmed)
+    cout << "\n-- Trigger zone 3 (from ARMED_HOME, propagates to ARMED) --" << endl;
+    auto trigData = xmake_shared<TriggerData>(); trigData->zone = 3;
+    alarm.Trigger(trigData);
+
+    // Disarm from ALARMING: direct transition
+    cout << "\n-- Disarm (from ALARMING) --" << endl;
+    alarm.Disarm();
+
+    // Arm away, then disarm: ARMED_AWAY propagates Disarm to ARMED
+    cout << "\n-- ArmAway then Disarm (propagates through ARMED) --" << endl;
+    alarm.ArmAway();
+    cout << "\n-- Disarm (from ARMED_AWAY, propagates to ARMED) --" << endl;
+    alarm.Disarm();
+
     processTimerExit = true;
     timerThread.join();
 
     RunStateMachineTests();
+    RunStateMachineHSMTests();
 
     return 0;
 }
