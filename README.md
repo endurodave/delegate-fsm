@@ -68,7 +68,7 @@ build\Debug\StateMachineApp.exe  # Windows
 | :--- | :--- |
 | [**State Machine Design in C**](https://github.com/endurodave/C_StateMachine) | A compact C language finite state machine (FSM) implementation. |
 | [**State Machine Design in C++**](https://github.com/endurodave/StateMachine) | A compact C++ language finite state machine (FSM) implementation. |
-| [**DelegateMQ**](https://github.com/endurodave/DelegateMQ) | A messaging middleware providing RAII-safe asynchronous dispatch and pub/sub signals. |
+| [**DelegateMQ**](https://github.com/DelegateMQ/DelegateMQ) | A messaging middleware providing RAII-safe asynchronous dispatch and pub/sub signals. |
 
 # Introduction
 
@@ -92,7 +92,7 @@ This state machine has the following features:
 
 ## DelegateMQ Integration
 
-[DelegateMQ](https://github.com/endurodave/DelegateMQ) is a messaging middleware that enables objects to communicate asynchronously and across different threads. It is "infused" into this state machine to provide:
+[DelegateMQ](https://github.com/DelegateMQ/DelegateMQ) is a messaging middleware that enables objects to communicate asynchronously and across different threads. It is "infused" into this state machine to provide:
 
 *   **Asynchronous active-object support** – events can be automatically marshaled to a dedicated state machine thread.
 *   **Pub/Sub signals** – external observers can subscribe to state transitions and other events without the need for subclassing.
