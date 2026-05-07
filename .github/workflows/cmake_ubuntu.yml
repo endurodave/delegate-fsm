@@ -24,3 +24,4 @@ jobs:
 
     - name: Run StateMachineApp
       run: ./build/StateMachineApp
+
